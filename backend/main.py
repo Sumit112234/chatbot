@@ -19,7 +19,7 @@ key = env_vars["GEMINI_API_KEY"]
 
 
 
-genai.configure(api_key=key)
+genai.configure(api_key='AIzaSyChbzqwF1gyTC4LtZxsqMZb09sAY_pZ2x4')
 # genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 # if not os.getenv("GEMINI_API_KEY"):
 #     raise Exception("GEMINI_API_KEY not found in environment")
