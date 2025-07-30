@@ -13,7 +13,7 @@ from dotenv import dotenv_values
 
 env_vars = dotenv_values(".env")
 
-key = env_vars["GEMINI_API_KEY"]
+# key = env_vars["GEMINI_API_KEY"]
 
 
 
