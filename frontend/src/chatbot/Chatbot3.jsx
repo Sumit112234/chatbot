@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Bot, User, Send, RefreshCw, Loader2 } from "lucide-react";
 
-const API_BASE_URL = "http://localhost:8000";
+const API_BASE_URL = import.meta.env.VITE_APP_URL;
 
 function Chatbot3() {
   const [messages, setMessages] = useState([]);
