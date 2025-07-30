@@ -7,10 +7,19 @@ import google.generativeai as genai
 import uuid
 import os
 import time 
+from dotenv import dotenv_values
 
-# print(os.getenv())
 
-genai.configure(api_key="AIzaSyChbzqwF1gyTC4LtZxsqMZb09sAY_pZ2x4")
+
+env_vars = dotenv_values(".env")
+
+key = env_vars["GEMINI_API_KEY"]
+
+
+
+
+
+genai.configure(api_key=key)
 # genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 # if not os.getenv("GEMINI_API_KEY"):
 #     raise Exception("GEMINI_API_KEY not found in environment")
