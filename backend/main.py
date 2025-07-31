@@ -26,7 +26,8 @@ genai.configure(api_key='AIzaSyChbzqwF1gyTC4LtZxsqMZb09sAY_pZ2x4')
 
 # Initialize the Gemini model.
 
-MODEL_NAME = "gemini-2.5-flash-preview-05-20"
+# MODEL_NAME = "gemini-2.5-flash-preview-05-20"
+MODEL_NAME = "gemini-2.0-flash"
 model = genai.GenerativeModel(MODEL_NAME)
 
 
