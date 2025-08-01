@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import Optional, Dict
 from datetime import datetime, timezone
 from dotenv import dotenv_values
-import google.generativeai as genai
+import cohere
 import asyncio
 import uuid
 import os
@@ -12,20 +12,20 @@ import traceback
 
 # --- Load environment variables ---
 env_vars = dotenv_values(".env")
-api_key = env_vars.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
+api_key = env_vars.get("COHERE_API_KEY") or os.getenv("COHERE_API_KEY")
 
 if not api_key:
-    raise RuntimeError("GEMINI_API_KEY not found in environment")
+    raise RuntimeError("COHERE_API_KEY not found in environment")
 
-genai.configure(api_key=api_key)
+co = cohere.AsyncClient(api_key)
 
 # --- Model Configuration ---
-MODEL_NAME = "gemini-2.0-flash"
+MODEL_NAME = "command-r-plus"  # Recommended model for chat
 
 # --- FastAPI App Setup ---
 app = FastAPI(
     title="AI Chatbot API",
-    description="A FastAPI server to interact with Gemini API using streamed responses",
+    description="A FastAPI server to interact with Cohere API using streamed responses",
     version="1.0.0"
 )
 
@@ -50,24 +50,21 @@ class ChatResponse(BaseModel):
 class ResetResponse(BaseModel):
     message: str
 
-# --- Helper Function to Stream with Retry ---
-async def call_gemini_stream_with_retry(
-    prompt: str,
-    max_retries: int = 5,
-    initial_delay: float = 1.0
-) -> str:
+# --- Helper Function for Retryable Streaming Response ---
+async def call_cohere_stream_with_retry(prompt: str, max_retries: int = 5, initial_delay: float = 1.0) -> str:
     delay = initial_delay
-
     for attempt in range(max_retries):
         try:
-            model = genai.GenerativeModel(MODEL_NAME)
-            chat_session = model.start_chat(history=[])
-            stream = await chat_session.send_message_async(prompt, stream=True)
+            stream = co.chat_stream(
+                message=prompt,
+                model=MODEL_NAME,
+                temperature=0.7
+            )
 
             ai_response = ""
-            async for chunk in stream:
-                if hasattr(chunk, "text") and chunk.text:
-                    ai_response += chunk.text
+            async for event in stream:
+                if event.event_type == "text-generation":
+                    ai_response += event.text
 
             return ai_response
 
@@ -79,7 +76,7 @@ async def call_gemini_stream_with_retry(
             else:
                 raise HTTPException(
                     status_code=500,
-                    detail=f"Gemini API call failed after {max_retries} retries: {e}"
+                    detail=f"Cohere API call failed after {max_retries} retries: {e}"
                 )
 
 # --- API Endpoints ---
@@ -91,7 +88,7 @@ async def root():
 async def chat_endpoint(chat_message: ChatMessage):
     try:
         session_id = chat_message.session_id or str(uuid.uuid4())
-        ai_response = await call_gemini_stream_with_retry(chat_message.message)
+        ai_response = await call_cohere_stream_with_retry(chat_message.message)
 
         return ChatResponse(
             response=ai_response,
@@ -111,13 +108,221 @@ async def health_check():
 
 @app.post("/reset-chat/{session_id}", response_model=ResetResponse)
 async def reset_chat(session_id: str):
-    # Session management removed; stateless handling
     return {"message": f"Session ID '{session_id}' reset (no session state stored)."}
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
+
+# from fastapi import FastAPI, HTTPException
+# from pydantic import BaseModel
+# from typing import Dict, List
+# import httpx
+# import os
+# from dotenv import load_dotenv
+# from fastapi.middleware.cors import CORSMiddleware
+
+# load_dotenv()
+
+# app = FastAPI(
+#     title="AI Chatbot API",
+#     description="A FastAPI server to interact with Gemini API using streamed responses",
+#     version="1.0.0"
+# )
+
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["https://devin-bot.vercel.app", "http://localhost:5173"],
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
+# GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+
+# # app = FastAPI()
+# sessions: Dict[str, List[Dict]] = {}
+
+# # Input model
+# class ChatRequest(BaseModel):
+#     session_id: str
+#     message: str
+
+# @app.get("/")
+# def root():
+#     return {"message": "Welcome to Gemini Chatbot API (direct REST)"}
+
+# @app.get("/health")
+# def health():
+#     return {"status": "ok"}
+
+# @app.post("/chat")
+# async def chat(data: ChatRequest):
+#     session_id = data.session_id
+#     user_message = data.message
+
+#     # Create session history if not exists
+#     if session_id not in sessions:
+#         sessions[session_id] = []
+
+#     # Add user message to history
+#     sessions[session_id].append({"role": "user", "parts": [user_message]})
+
+#     payload = {
+#         "contents": sessions[session_id]
+#     }
+
+#     async with httpx.AsyncClient() as client:
+#         response = await client.post(
+#             f"{GEMINI_API_URL}?key={GEMINI_API_KEY}",
+#             json=payload
+#         )
+
+#     if response.status_code == 200:
+#         result = response.json()
+#         model_reply = result["candidates"][0]["content"]["parts"][0]["text"]
+#         # Save assistant response to session
+#         sessions[session_id].append({"role": "model", "parts": [model_reply]})
+#         return {"response": model_reply}
+#     else:
+#         raise HTTPException(status_code=response.status_code, detail=response.text)
+
+# @app.delete("/reset-chat/{session_id}")
+# def reset_chat(session_id: str):
+#     if session_id in sessions:
+#         del sessions[session_id]
+#         return {"message": f"Chat session '{session_id}' reset."}
+#     else:
+#         raise HTTPException(status_code=404, detail="Session not found")
+
+
+# if __name__ == "__main__":
+#     import uvicorn
+#     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+# from fastapi import FastAPI, HTTPException
+# from fastapi.middleware.cors import CORSMiddleware
+# from pydantic import BaseModel
+# from typing import Optional, Dict
+# from datetime import datetime, timezone
+# from dotenv import dotenv_values
+# import google.generativeai as genai
+# import asyncio
+# import uuid
+# import os
+# import traceback
+
+# # --- Load environment variables ---
+# env_vars = dotenv_values(".env")
+# api_key = env_vars.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
+
+# if not api_key:
+#     raise RuntimeError("GEMINI_API_KEY not found in environment")
+
+# genai.configure(api_key=api_key)
+
+# # --- Model Configuration ---
+# MODEL_NAME = "gemini-2.0-flash"
+
+# # --- FastAPI App Setup ---
+# app = FastAPI(
+#     title="AI Chatbot API",
+#     description="A FastAPI server to interact with Gemini API using streamed responses",
+#     version="1.0.0"
+# )
+
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["https://devin-bot.vercel.app", "http://localhost:5173"],
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
+
+# model = genai.GenerativeModel(MODEL_NAME)
+
+# # --- Pydantic Models ---
+# class ChatMessage(BaseModel):
+#     message: str
+#     session_id: Optional[str] = None
+
+# class ChatResponse(BaseModel):
+#     response: str
+#     session_id: str
+#     timestamp: str
+
+# class ResetResponse(BaseModel):
+#     message: str
+
+# # --- Helper Function to Stream with Retry---
+# async def call_gemini_stream_with_retry( 
+#     prompt: str,
+#     max_retries: int = 5,
+#     initial_delay: float = 1.0
+# ) -> str:
+#     delay = initial_delay
+
+#     for attempt in range(max_retries):
+#         try:
+         
+#             chat_session = model.start_chat(history=[])
+#             stream = await chat_session.send_message_async(prompt, stream=True)
+
+#             ai_response = ""
+#             async for chunk in stream:
+#                 if hasattr(chunk, "text") and chunk.text:
+#                     ai_response += chunk.text
+
+#             return ai_response
+
+#         except Exception as e:
+#             print(f"Attempt {attempt+1}/{max_retries} failed: {e}")
+#             if attempt < max_retries - 1:
+#                 await asyncio.sleep(delay)
+#                 delay *= 2
+#             else:
+#                 raise HTTPException(
+#                     status_code=500,
+#                     detail=f"Gemini API call failed after {max_retries} retries: {e}"
+#                 )
+
+# # --- API Endpoints ---
+# @app.get("/", response_model=Dict[str, str])
+# async def root():
+#     return {"message": "AI Chatbot API is running!"}
+
+# @app.post("/chat", response_model=ChatResponse)
+# async def chat_endpoint(chat_message: ChatMessage):
+#     try:
+#         session_id = chat_message.session_id or str(uuid.uuid4())
+#         ai_response = await call_gemini_stream_with_retry(chat_message.message)
+
+#         return ChatResponse(
+#             response=ai_response,
+#             session_id=session_id,
+#             timestamp=datetime.now(timezone.utc).isoformat()
+#         )
+
+#     except HTTPException as e:
+#         raise e
+#     except Exception as e:
+#         traceback.print_exc()
+#         raise HTTPException(status_code=500, detail=f"Error generating response: {str(e)}")
+
+# @app.get("/health", response_model=Dict[str, str])
+# async def health_check():
+#     return {"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat()}
+
+# @app.post("/reset-chat/{session_id}", response_model=ResetResponse)
+# async def reset_chat(session_id: str):
+#     # Session management removed; stateless handling
+#     return {"message": f"Session ID '{session_id}' reset (no session state stored)."}
+
+# if __name__ == "__main__":
+#     import uvicorn
+#     uvicorn.run(app, host="0.0.0.0", port=8000)
 
 
 # from fastapi import FastAPI, HTTPException
