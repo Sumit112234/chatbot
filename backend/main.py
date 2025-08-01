@@ -9,20 +9,27 @@ import asyncio
 import uuid
 import os
 import traceback
+import json
 
-# --- Load environment variables ---
+
 env_vars = dotenv_values(".env")
 api_key = env_vars.get("COHERE_API_KEY") or os.getenv("COHERE_API_KEY")
 
 if not api_key:
     raise RuntimeError("COHERE_API_KEY not found in environment")
 
+KNOWLEDGE = ''
+
+
+with open("knowledge.json", "r", encoding="utf-8") as f:
+    KNOWLEDGE = json.load(f)
+
+
 co = cohere.AsyncClient(api_key)
 
-# --- Model Configuration ---
-MODEL_NAME = "command-r-plus"  # Recommended model for chat
 
-# --- FastAPI App Setup ---
+MODEL_NAME = "command-r-plus"  
+
 app = FastAPI(
     title="AI Chatbot API",
     description="A FastAPI server to interact with Cohere API using streamed responses",
@@ -37,6 +44,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # --- Pydantic Models ---
 class ChatMessage(BaseModel):
     message: str
@@ -50,7 +58,6 @@ class ChatResponse(BaseModel):
 class ResetResponse(BaseModel):
     message: str
 
-# --- Helper Function for Retryable Streaming Response ---
 async def call_cohere_stream_with_retry(prompt: str, max_retries: int = 5, initial_delay: float = 1.0) -> str:
     delay = initial_delay
     for attempt in range(max_retries):
@@ -58,7 +65,15 @@ async def call_cohere_stream_with_retry(prompt: str, max_retries: int = 5, initi
             stream = co.chat_stream(
                 message=prompt,
                 model=MODEL_NAME,
-                temperature=0.7
+                documents=KNOWLEDGE,
+                temperature=0.3,
+                preamble=(
+                    "You are a helpful assistant that only answers questions "
+                    "using the provided business knowledge. "
+                    "If the question is unrelated to the documents, respond politely with: "
+                    "'I'm sorry, I can only answer questions related to Zordly or its services.'"
+                ),
+                prompt_truncation="AUTO"
             )
 
             ai_response = ""
@@ -66,7 +81,7 @@ async def call_cohere_stream_with_retry(prompt: str, max_retries: int = 5, initi
                 if event.event_type == "text-generation":
                     ai_response += event.text
 
-            return ai_response
+            return ai_response.strip()
 
         except Exception as e:
             print(f"Attempt {attempt+1}/{max_retries} failed: {e}")
