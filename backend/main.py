@@ -21,7 +21,7 @@ if not api_key:
 KNOWLEDGE = ''
 
 
-with open("knowledge.json", "r", encoding="utf-8") as f:
+with open("Knowledge.json", "r", encoding="utf-8") as f:
     KNOWLEDGE = json.load(f)
 
 
